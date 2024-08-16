@@ -2,7 +2,7 @@ use core::{str, time};
 use std::{
     any::Any, io::{self}, sync::Arc
 };
-use packets::packet_base::{pre_register, PACKET_PREREGISTER_CONNECTION};
+use packets::packet_base::{pre_register, PACKET_HEART_BEAT_RESPONSE, PACKET_PLAYER_INFO, PACKET_PREREGISTER_CONNECTION};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::{mpsc, Mutex}, time::sleep};
 
 pub mod packets;
@@ -13,14 +13,6 @@ async fn process_packets(mut send_tx: mpsc::Sender<Vec<u8>>, mut recieved_rx: mp
     while let Some(packets) = recieved_rx.recv().await {
         for packet in packets {
             match packet {
-                PACKET_PREREGISTER_CONNECTION => {
-                    println!("connection?");
-                    match send_tx.send(pre_register()).await{
-                        Ok(n) => println!("sended to sender"),
-                        Err(e) => println!("Error! {}", e)
-                    };
-
-                }
                 _ => println!("unknown packet {}: {}", packet, str::from_utf8(&[packet]).unwrap_or("nan"))
             }
         }
@@ -62,8 +54,6 @@ struct GameOutputStream {
 impl GameOutputStream {
     async fn packets_sender(&self, mut send_rx: mpsc::Receiver<Vec<u8>>) {
         while let Some(packets) = send_rx.recv().await {
-            println!("I'm sending!");
-            dbg!(&packets);
             let mut write_half = self.write_half.lock().await;
             for packet in packets {
                 match write_half.write_all(&[packet]).await {
@@ -89,8 +79,8 @@ async fn main() -> io::Result<()> {
         let game_in = GameInputStream { read_half };
         let game_out = GameOutputStream { write_half };
 
-        let (recieved_tx, recieved_rx) = mpsc::channel::<Vec<u8>>(100);
-        let (send_tx, send_rx) = mpsc::channel::<Vec<u8>>(1000);
+        let (recieved_tx, recieved_rx) = mpsc::channel::<Vec<u8>>(64);
+        let (send_tx, send_rx) = mpsc::channel::<Vec<u8>>(64);
 
         tokio::spawn(async move {
             game_in.packets_reciever(recieved_tx).await

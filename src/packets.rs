@@ -33,11 +33,9 @@ pub mod packet_base {
 	}
 
 	pub fn pre_register() -> Vec<u8> {
-		let mut result: Vec<u8> = vec![1, 176, 176];
+		let mut result: Vec<u8> = vec![1];
 		result.append(&mut string_packet(String::from("dixe.rustyserver")));
 		result.append(&mut string_packet(String::from("Dixxe")));
-		result.push(255);
-		result.push(176);
 		result.push(PACKET_REGISTER_CONNECTION);
 		result	
 	}
