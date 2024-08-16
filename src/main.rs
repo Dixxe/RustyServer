@@ -2,7 +2,7 @@ use core::{str, time};
 use std::{
     io::{self, prelude::*}, str::FromStr, sync::Arc, thread::sleep,
 };
-use tokio::{io::AsyncReadExt, net::{TcpListener, TcpStream}, sync::Mutex};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::Mutex};
 
 pub mod packets;
 use packets::packet_base::*;
@@ -36,6 +36,13 @@ async fn game_input_stream(stream: Arc<Mutex<TcpStream>>) {
     }
 }
 
+async fn game_output_stream(stream: Arc<Mutex<TcpStream>>, bytes: &[u8]) {
+    loop {
+        let mut stream_locked = stream.lock().await;
+        stream_locked.write_all(bytes).await.unwrap();
+    }
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let mut listener = TcpListener::bind("127.0.0.1:3493").await?;
@@ -55,5 +62,7 @@ async fn main() -> io::Result<()> {
         tokio::spawn(async move {
             game_input_stream(stream_clone).await;
         });
+
+
     }
 }
