@@ -9,25 +9,25 @@ use packets::packet_base::*;
 
 async fn process_socket(stream: Arc<Mutex<TcpStream>>) {
     println!("Connected");
-    // This is where you can add logic for processing the connection
-    // You could pass `stream` to other async functions or tasks
+
 }
 
 async fn game_input_stream(stream: Arc<Mutex<TcpStream>>) {
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(100); // Create a channel with a buffer of 100 packets
 
-    // Spawn a task to read from the stream and send packets to the channel
+    // function that reads incoming packets from players
+
     let stream_clone = stream.clone();
     tokio::spawn(async move {
         let mut stream = stream_clone.lock().await;
-        let mut buf = [0; 1024];
+        let mut buf = [0; 1024]; // packets saved here
         loop {
             match stream.read(&mut buf).await {
-                Ok(0) => break, // Connection closed
+                Ok(0) => break,
                 Ok(n) => {
-                    let packet = buf[..n].to_vec();
-                    if tx.send(packet).await.is_err() {
-                        break; // Receiver dropped, stop reading
+                    let packets = buf[..n].to_vec();
+                    if tx.send(packets).await.is_err() { // send incoming packets in mpsc
+                        break;
                     }
                 }
                 Err(e) => {
@@ -38,8 +38,8 @@ async fn game_input_stream(stream: Arc<Mutex<TcpStream>>) {
         }
     });
 
-    // Now `rx` is a stream of incoming packets. You can process these in different tasks or threads.
-    while let Some(packet) = rx.recv().await {
+    
+    while let Some(packet) = rx.recv().await { // wrap packets in processing functions
         tokio::spawn(async move {
             process_packet(packet).await;
         });
@@ -47,7 +47,6 @@ async fn game_input_stream(stream: Arc<Mutex<TcpStream>>) {
 }
 
 async fn process_packet(packets: Vec<u8>) {
-    // Process the packet here
     dbg!(&packets);
     for packet in packets {
         println!("Packet:{} equals {}", packet, str::from_utf8(&[packet]).unwrap_or("NaN"));
@@ -57,6 +56,7 @@ async fn process_packet(packets: Vec<u8>) {
 
 async fn game_output_stream(stream: Arc<Mutex<TcpStream>>, bytes: &[u8]) {
     loop {
+        // TODO method. Use this to send packets to players.
         let mut stream_locked = stream.lock().await;
         stream_locked.write_all(bytes).await.unwrap();
     }
@@ -70,13 +70,11 @@ async fn main() -> io::Result<()> {
         let (socket, _) = listener.accept().await?;
         let stream = Arc::new(Mutex::new(socket));
 
-        // Spawn a new task to handle the connection
         let stream_clone = stream.clone();
         tokio::spawn(async move {
             process_socket(stream_clone).await;
         });
 
-        // You can spawn another task for input handling
         let stream_clone = stream.clone();
         tokio::spawn(async move {
             game_input_stream(stream_clone).await;
