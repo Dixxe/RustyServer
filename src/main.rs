@@ -1,36 +1,47 @@
-use core::str;
+use core::{str, time};
 use std::{
-    io::{self}, sync::Arc,
+    any::Any, io::{self}, sync::Arc
 };
-use packets::packet_base::Packet;
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::{mpsc, Mutex}};
+use packets::packet_base::{pre_register, PACKET_PREREGISTER_CONNECTION};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::{mpsc, Mutex}, time::sleep};
 
 pub mod packets;
 
 async fn process_packets(mut send_tx: mpsc::Sender<Vec<u8>>, mut recieved_rx: mpsc::Receiver<Vec<u8>>) {
     // function where packets are processed.
+    println!("Connected!");
     while let Some(packets) = recieved_rx.recv().await {
-        dbg!(packets);
+        for packet in packets {
+            match packet {
+                PACKET_PREREGISTER_CONNECTION => {
+                    println!("connection?");
+                    match send_tx.send(pre_register()).await{
+                        Ok(n) => println!("sended to sender"),
+                        Err(e) => println!("Error! {}", e)
+                    };
+
+                }
+                _ => println!("unknown packet {}: {}", packet, str::from_utf8(&[packet]).unwrap_or("nan"))
+            }
+        }
     }
 }
 
 struct GameInputStream {
-    stream: Arc<Mutex<TcpStream>>
+    read_half: Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedReadHalf>>,
 }
+
 impl GameInputStream {
     async fn packets_reciever(self, tx: mpsc::Sender<Vec<u8>>) {
-    
-        // function that reads incoming packets from players
-    
         tokio::spawn(async move {
-            let mut stream = self.stream.lock().await;
-            let mut buf = [0; 1024]; // packets saved here
+            let mut buf = [0; 1024]; // Buffer to store incoming packets
+            let mut read_half = self.read_half.lock().await;
             loop {
-                match stream.read(&mut buf).await {
+                match read_half.read(&mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
                         let packets = buf[..n].to_vec();
-                        if tx.send(packets).await.is_err() { // send incoming packets in mpsc
+                        if tx.send(packets).await.is_err() { // Send incoming packets to the mpsc
                             break;
                         }
                     }
@@ -45,24 +56,22 @@ impl GameInputStream {
 }
 
 struct GameOutputStream {
-    stream: Arc<Mutex<TcpStream>>
-}
-impl GameOutputStream {
-    async fn packets_sender(self, mut send_rx: mpsc::Receiver<Vec<u8>>) {
-        let mut stream = self.stream.lock().await;
-        while let Some(packets) = send_rx.recv().await {
-            for packet in packets {
-                stream.write_all(&[packet]);
-            }
-        }
-    }
+    write_half: Arc<tokio::sync::Mutex<tokio::net::tcp::OwnedWriteHalf>>,
 }
 
-async fn game_output_stream(stream: Arc<Mutex<TcpStream>>, bytes: &[u8]) {
-    loop {
-        // TODO method. Use this to send packets to players.
-        let mut stream_locked = stream.lock().await;
-        stream_locked.write_all(bytes).await.unwrap();
+impl GameOutputStream {
+    async fn packets_sender(&self, mut send_rx: mpsc::Receiver<Vec<u8>>) {
+        while let Some(packets) = send_rx.recv().await {
+            println!("I'm sending!");
+            dbg!(&packets);
+            let mut write_half = self.write_half.lock().await;
+            for packet in packets {
+                match write_half.write_all(&[packet]).await {
+                    Ok(_) => println!("Sent {}", packet),
+                    Err(e) => panic!("Can't send {}!", packet),
+                };
+            }
+        }
     }
 }
 
@@ -72,12 +81,16 @@ async fn main() -> io::Result<()> {
 
     loop {
         let (socket, _) = listener.accept().await?;
-        let stream = Arc::new(Mutex::new(socket));
-        let game_in = GameInputStream { stream: stream.clone() };
-        let game_out = GameOutputStream { stream: stream.clone() };
+
+        let (read_half, write_half) = socket.into_split();
+        let read_half = Arc::new(Mutex::new(read_half));
+        let write_half = Arc::new(Mutex::new(write_half));
+
+        let game_in = GameInputStream { read_half };
+        let game_out = GameOutputStream { write_half };
 
         let (recieved_tx, recieved_rx) = mpsc::channel::<Vec<u8>>(100);
-        let (send_tx, send_rx) = mpsc::channel::<Vec<u8>>(100);
+        let (send_tx, send_rx) = mpsc::channel::<Vec<u8>>(1000);
 
         tokio::spawn(async move {
             game_in.packets_reciever(recieved_tx).await

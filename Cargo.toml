@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 rand = "0.8.5"
+serde_yaml = "0.9.34"
 tokio = { version = "1.39.2", features = ["full"] }
