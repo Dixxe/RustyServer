@@ -5,9 +5,10 @@ pub mod packet_base {
 	}
 	impl Packet {
 		fn preRegister() {
-			
+
 		}
 	}
+	// Server commands
 	const PACKET_REGISTER_CONNECTION: u8 = 161;
 	const PACKET_TEAM_LIST: u8 = 115;
 	const PACKET_HEART_BEAT: u8 = 108;
