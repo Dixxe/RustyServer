@@ -1,12 +1,7 @@
 pub mod packet_base {
 
-	struct Packet {
+	pub struct Packet {
 		pub byte: u8,
-	}
-	impl Packet {
-		fn preRegister() {
-
-		}
 	}
 	// Server commands
 	const PACKET_REGISTER_CONNECTION: u8 = 161;
